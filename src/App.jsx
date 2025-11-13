@@ -185,25 +185,34 @@ function App() {
   };
 
   // Handle tarot interpretation
-  const handleInterpretation = (readingData) => {
-    const interpretation = generateQuickInterpretation(readingData);
-    setText(interpretation);
+  const handleInterpretation = async (readingData) => {
+    // Show loading state
+    setText('🔮 Consultando os arcanos... A IA está gerando sua interpretação profunda...');
 
-    // Auto-speak interpretation
-    setTimeout(async () => {
-      if (ttsEngine === 'elevenlabs' && elevenLabsRef.current && selectedElevenLabsVoice) {
-        try {
-          await elevenLabsRef.current.speak(interpretation, selectedElevenLabsVoice);
-        } catch (error) {
-          console.error('ElevenLabs TTS error:', error);
-          if (speechHandlerRef.current) {
-            speechHandlerRef.current.speak(interpretation, selectedVoice, rate, pitch);
+    try {
+      // Generate AI interpretation (or fallback to local)
+      const interpretation = await generateQuickInterpretation(readingData);
+      setText(interpretation);
+
+      // Auto-speak interpretation after a brief pause
+      setTimeout(async () => {
+        if (ttsEngine === 'elevenlabs' && elevenLabsRef.current && selectedElevenLabsVoice) {
+          try {
+            await elevenLabsRef.current.speak(interpretation, selectedElevenLabsVoice);
+          } catch (error) {
+            console.error('ElevenLabs TTS error:', error);
+            if (speechHandlerRef.current) {
+              speechHandlerRef.current.speak(interpretation, selectedVoice, rate, pitch);
+            }
           }
+        } else if (speechHandlerRef.current) {
+          speechHandlerRef.current.speak(interpretation, selectedVoice, rate, pitch);
         }
-      } else if (speechHandlerRef.current) {
-        speechHandlerRef.current.speak(interpretation, selectedVoice, rate, pitch);
-      }
-    }, 500);
+      }, 500);
+    } catch (error) {
+      console.error('Error generating interpretation:', error);
+      setText('⚠️ Erro ao gerar interpretação. Por favor, tente novamente.');
+    }
   };
 
   return (
