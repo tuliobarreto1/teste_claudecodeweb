@@ -6,6 +6,7 @@ import VoiceControls from './components/VoiceControls';
 import ExampleTexts from './components/ExampleTexts';
 import TarotReading from './components/TarotReading';
 import TTSSettings from './components/TTSSettings';
+import APIStatusIndicator from './components/APIStatusIndicator';
 import SpeechHandler from './utils/speechSynthesis';
 import ElevenLabsTTS from './utils/elevenLabsTTS';
 import { generateQuickInterpretation } from './utils/tarotInterpreter';
@@ -186,12 +187,29 @@ function App() {
 
   // Handle tarot interpretation
   const handleInterpretation = async (readingData) => {
+    const hasDeepSeek = !!import.meta.env.VITE_DEEPSEEK_API_KEY;
+
+    console.log('═══════════════════════════════════════');
+    console.log('🔮 INICIANDO INTERPRETAÇÃO DE TARÔ');
+    console.log('═══════════════════════════════════════');
+    console.log('DeepSeek API Key configurada:', hasDeepSeek ? 'SIM ✓' : 'NÃO ✗');
+    console.log('Modo:', hasDeepSeek ? 'IA DEEPSEEK' : 'INTERPRETAÇÃO LOCAL');
+    console.log('═══════════════════════════════════════');
+
     // Show loading state
-    setText('🔮 Consultando os arcanos... A IA está gerando sua interpretação profunda...');
+    const loadingMsg = hasDeepSeek
+      ? '🤖 Consultando DeepSeek AI... Gerando interpretação profissional com IA...'
+      : '🔮 Gerando interpretação... (Modo local - configure DeepSeek para IA)';
+    setText(loadingMsg);
 
     try {
       // Generate AI interpretation (or fallback to local)
       const interpretation = await generateQuickInterpretation(readingData);
+
+      console.log('✨ Interpretação gerada com sucesso!');
+      console.log('Tamanho:', interpretation.length, 'caracteres');
+      console.log('═══════════════════════════════════════');
+
       setText(interpretation);
 
       // Auto-speak interpretation after a brief pause
@@ -210,7 +228,7 @@ function App() {
         }
       }, 500);
     } catch (error) {
-      console.error('Error generating interpretation:', error);
+      console.error('❌ Error generating interpretation:', error);
       setText('⚠️ Erro ao gerar interpretação. Por favor, tente novamente.');
     }
   };
@@ -352,6 +370,9 @@ function App() {
           </>
         ) : (
           <>
+            {/* API Status Indicator */}
+            <APIStatusIndicator />
+
             {/* Tarot Reading Mode */}
             <div className="mb-12">
               <TarotReading onInterpretation={handleInterpretation} />
