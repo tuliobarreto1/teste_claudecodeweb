@@ -5,7 +5,9 @@ import MysticalAvatar from './components/MysticalAvatar';
 import VoiceControls from './components/VoiceControls';
 import ExampleTexts from './components/ExampleTexts';
 import TarotReading from './components/TarotReading';
+import TTSSettings from './components/TTSSettings';
 import SpeechHandler from './utils/speechSynthesis';
+import ElevenLabsTTS from './utils/elevenLabsTTS';
 import { generateQuickInterpretation } from './utils/tarotInterpreter';
 
 function App() {
@@ -14,14 +16,83 @@ function App() {
   const [mouthState, setMouthState] = useState('closed'); // 'closed', 'open', 'wide'
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [text, setText] = useState('');
+
+  // TTS Engine selection
+  const [ttsEngine, setTtsEngine] = useState('web'); // 'web' or 'elevenlabs'
+
+  // Web Speech API states
   const [availableVoices, setAvailableVoices] = useState([]);
   const [selectedVoice, setSelectedVoice] = useState(0);
   const [rate, setRate] = useState(1);
   const [pitch, setPitch] = useState(1);
 
-  const speechHandlerRef = useRef(null);
+  // ElevenLabs states
+  const [elevenLabsVoices, setElevenLabsVoices] = useState([]);
+  const [selectedElevenLabsVoice, setSelectedElevenLabsVoice] = useState('');
+  const [isLoadingVoices, setIsLoadingVoices] = useState(false);
 
-  // Initialize speech handler
+  const speechHandlerRef = useRef(null);
+  const elevenLabsRef = useRef(null);
+
+  // Initialize ElevenLabs
+  useEffect(() => {
+    const apiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
+
+    if (apiKey) {
+      elevenLabsRef.current = new ElevenLabsTTS(apiKey);
+
+      // Load ElevenLabs voices
+      const loadElevenLabsVoices = async () => {
+        setIsLoadingVoices(true);
+        try {
+          const voices = await elevenLabsRef.current.getVoices();
+          setElevenLabsVoices(voices);
+
+          // Select first Portuguese or English voice
+          const portugueseVoice = voices.find(v =>
+            v.labels?.language?.toLowerCase().includes('portuguese')
+          );
+          const englishVoice = voices.find(v =>
+            v.labels?.language?.toLowerCase().includes('english')
+          );
+
+          if (portugueseVoice) {
+            setSelectedElevenLabsVoice(portugueseVoice.voice_id);
+          } else if (englishVoice) {
+            setSelectedElevenLabsVoice(englishVoice.voice_id);
+          } else if (voices.length > 0) {
+            setSelectedElevenLabsVoice(voices[0].voice_id);
+          }
+        } catch (error) {
+          console.error('Error loading ElevenLabs voices:', error);
+        } finally {
+          setIsLoadingVoices(false);
+        }
+      };
+
+      loadElevenLabsVoices();
+
+      // Setup callbacks for ElevenLabs
+      elevenLabsRef.current.setOnSpeakStart(() => {
+        setIsSpeaking(true);
+      });
+
+      elevenLabsRef.current.setOnSpeakEnd(() => {
+        setIsSpeaking(false);
+        setMouthState('closed');
+      });
+
+      elevenLabsRef.current.setOnSpeaking(() => {
+        setMouthState((prev) => {
+          const states = ['closed', 'open', 'wide', 'open'];
+          const currentIndex = states.indexOf(prev);
+          return states[(currentIndex + 1) % states.length];
+        });
+      });
+    }
+  }, []);
+
+  // Initialize Web Speech API
   useEffect(() => {
     speechHandlerRef.current = new SpeechHandler();
 
@@ -70,21 +141,43 @@ function App() {
       if (speechHandlerRef.current) {
         speechHandlerRef.current.stop();
       }
+      if (elevenLabsRef.current) {
+        elevenLabsRef.current.stop();
+      }
     };
   }, []);
 
-  const handleSpeak = () => {
-    if (text.trim() && speechHandlerRef.current) {
-      speechHandlerRef.current.speak(text, selectedVoice, rate, pitch);
+  const handleSpeak = async () => {
+    if (!text.trim()) return;
+
+    if (ttsEngine === 'elevenlabs' && elevenLabsRef.current && selectedElevenLabsVoice) {
+      // Use ElevenLabs
+      try {
+        await elevenLabsRef.current.speak(text, selectedElevenLabsVoice);
+      } catch (error) {
+        console.error('ElevenLabs TTS error:', error);
+        // Fallback to Web Speech
+        if (speechHandlerRef.current) {
+          speechHandlerRef.current.speak(text, selectedVoice, rate, pitch);
+        }
+      }
+    } else {
+      // Use Web Speech API
+      if (speechHandlerRef.current) {
+        speechHandlerRef.current.speak(text, selectedVoice, rate, pitch);
+      }
     }
   };
 
   const handleStop = () => {
     if (speechHandlerRef.current) {
       speechHandlerRef.current.stop();
-      setIsSpeaking(false);
-      setMouthState('closed');
     }
+    if (elevenLabsRef.current) {
+      elevenLabsRef.current.stop();
+    }
+    setIsSpeaking(false);
+    setMouthState('closed');
   };
 
   const handleTextSelect = (selectedText) => {
@@ -97,8 +190,17 @@ function App() {
     setText(interpretation);
 
     // Auto-speak interpretation
-    setTimeout(() => {
-      if (speechHandlerRef.current) {
+    setTimeout(async () => {
+      if (ttsEngine === 'elevenlabs' && elevenLabsRef.current && selectedElevenLabsVoice) {
+        try {
+          await elevenLabsRef.current.speak(interpretation, selectedElevenLabsVoice);
+        } catch (error) {
+          console.error('ElevenLabs TTS error:', error);
+          if (speechHandlerRef.current) {
+            speechHandlerRef.current.speak(interpretation, selectedVoice, rate, pitch);
+          }
+        }
+      } else if (speechHandlerRef.current) {
         speechHandlerRef.current.speak(interpretation, selectedVoice, rate, pitch);
       }
     }, 500);
@@ -197,10 +299,24 @@ function App() {
               <div className="text-center mb-6">
                 <div className="inline-flex items-center gap-2 glass-effect px-6 py-3 rounded-full">
                   <div className="w-3 h-3 bg-pink-500 rounded-full animate-pulse"></div>
-                  <span className="text-purple-200 font-semibold">Falando...</span>
+                  <span className="text-purple-200 font-semibold">
+                    {ttsEngine === 'elevenlabs' ? 'Falando com ElevenLabs...' : 'Falando...'}
+                  </span>
                 </div>
               </div>
             )}
+
+            {/* TTS Settings */}
+            <div className="mb-8 max-w-2xl mx-auto">
+              <TTSSettings
+                ttsEngine={ttsEngine}
+                onEngineChange={setTtsEngine}
+                elevenLabsVoices={elevenLabsVoices}
+                selectedElevenLabsVoice={selectedElevenLabsVoice}
+                onElevenLabsVoiceChange={setSelectedElevenLabsVoice}
+                isLoadingVoices={isLoadingVoices}
+              />
+            </div>
 
             {/* Voice Controls */}
             <div className="mb-8">
@@ -323,6 +439,7 @@ function App() {
           <p>✨ Desenvolvido com energia mística e tecnologia moderna ✨</p>
           <p className="text-xs mt-2 text-purple-500">
             Fase 2: Sistema completo de Tarô com interpretação por IA
+            {ttsEngine === 'elevenlabs' && ' + ElevenLabs TTS Premium'}
           </p>
         </footer>
       </div>
